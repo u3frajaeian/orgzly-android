@@ -1,7 +1,12 @@
 package com.orgzly.android.ui.notes
 
+import android.content.ComponentName
 import android.content.Context
+import android.content.Context.BIND_AUTO_CREATE
+import android.content.Intent
+import android.content.ServiceConnection
 import android.os.Bundle
+import android.os.IBinder
 import android.view.MotionEvent
 import android.view.View
 import android.widget.PopupWindow
@@ -10,7 +15,9 @@ import androidx.appcompat.app.AlertDialog
 import com.orgzly.BuildConfig
 import com.orgzly.R
 import com.orgzly.android.App
+import com.orgzly.android.TimerService
 import com.orgzly.android.data.DataRepository
+import com.orgzly.android.ui.ClockType
 import com.orgzly.android.ui.CommonFragment
 import com.orgzly.android.ui.NotePlace
 import com.orgzly.android.ui.SelectableItemAdapter
@@ -39,6 +46,9 @@ abstract class NotesFragment : CommonFragment(), TimestampDialogFragment.OnDateT
 
     private var notePopup: PopupWindow? = null
 
+    private var timerService: TimerService? = null
+    private var isBound = false
+
     protected fun showPopupWindow(
         noteId: Long,
         location: NotePopup.Location,
@@ -51,9 +61,10 @@ abstract class NotesFragment : CommonFragment(), TimestampDialogFragment.OnDateT
 
         val anchor = itemView.findViewById<View>(R.id.item_head_title)
 
-        notePopup = NotePopup.showWindow(noteId, anchor, location, direction, e1, e2) { _, buttonId ->
-            listener.onPopupButtonClick(noteId, buttonId)
-        }
+        notePopup =
+            NotePopup.showWindow(noteId, anchor, location, direction, e1, e2) { _, buttonId ->
+                listener.onPopupButtonClick(noteId, buttonId)
+            }
 
         // Enable back handler if popup is shown
         if (notePopup != null) {
@@ -127,7 +138,11 @@ abstract class NotesFragment : CommonFragment(), TimestampDialogFragment.OnDateT
         }
     }
 
-    protected fun openNoteStateDialog(listener: Listener, noteIds: Set<Long>, currentState: String?) {
+    protected fun openNoteStateDialog(
+        listener: Listener,
+        noteIds: Set<Long>,
+        currentState: String?
+    ) {
         dialog = NoteStateDialog.show(
             requireContext(),
             currentState,
@@ -157,6 +172,28 @@ abstract class NotesFragment : CommonFragment(), TimestampDialogFragment.OnDateT
         val f = TimestampDialogFragment.getInstance(id, timeType, noteIds, time)
 
         f.show(childFragmentManager, TimestampDialogFragment.FRAGMENT_TAG)
+    }
+
+    protected fun displayClockInSureDialog(id: Int, noteIds: Set<Long>) {
+        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, id)
+
+//        // If there is only one note, use its time as dialog's default
+//        val time = if (noteIds.size == 1) {
+//            if (id in scheduledTimeButtonIds()) {
+//                getScheduledTimeForNote(noteIds.first())
+//            } else {
+//                getDeadlineTimeForNote(noteIds.first())
+//            }
+//        } else {
+//            null
+//        }
+        startTimer()
+        val timeType = if (id in clockButtonIds())
+            ClockType.CLOCK_IN
+        else
+            ClockType.CLOCK_OUT
+
+
     }
 
     private fun getScheduledTimeForNote(id: Long): OrgDateTime? {
@@ -197,6 +234,10 @@ abstract class NotesFragment : CommonFragment(), TimestampDialogFragment.OnDateT
         return setOf(R.id.deadline, R.id.note_popup_set_deadline)
     }
 
+    fun clockButtonIds(): Set<Int> {
+        return setOf(R.id.clock_in, R.id.clock_out)
+    }
+
     interface Listener {
         fun onNoteOpen(noteId: Long)
 
@@ -218,5 +259,24 @@ abstract class NotesFragment : CommonFragment(), TimestampDialogFragment.OnDateT
 
     companion object {
         private val TAG = NotesFragment::class.java.name
+    }
+
+    private val connection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+            val binder = service as TimerService.TimerBinder
+            timerService = binder.getService()
+            isBound = true
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            timerService = null
+            isBound = false
+        }
+    }
+
+    fun startTimer() {
+        val intent = Intent(requireContext(), TimerService::class.java)
+        requireActivity().bindService(intent, connection, BIND_AUTO_CREATE)
+        timerService?.startTimer(60000, 1000) // 60 seconds with 1-second intervals
     }
 }

@@ -89,7 +89,9 @@ abstract class QueryFragment :
 
             R.id.note_popup_clock_in,
             R.id.clock_in -> {
-                listener?.onClockIn(ids)
+                println("havij")
+                displayClockInSureDialog(R.id.clock_in,ids)
+//                listener?.onClockIn(ids)
             }
 
             R.id.note_popup_clock_out,
